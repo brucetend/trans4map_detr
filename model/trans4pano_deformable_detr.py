@@ -28,16 +28,18 @@ class Trans4map_deformable_detr(nn.Module):
     def __init__(self, cfg, device):
         super(Trans4map_deformable_detr, self).__init__()
 
-        ego_feat_dim = cfg['ego_feature_dim']
-        mem_feat_dim = cfg['mem_feature_dim']
+        # ego_feat_dim = cfg['ego_feature_dim']
+        # mem_feat_dim = cfg['mem_feature_dim']
         n_obj_classes = cfg['n_obj_classes']
 
         mem_update = cfg['mem_update']
-        ego_downsample = cfg['ego_downsample']
+        # ego_downsample = cfg['ego_downsample']
 
-        self.mem_feat_dim = mem_feat_dim
+        print('cfg__:', cfg)
+
+        # self.mem_feat_dim = mem_feat_dim
         self.mem_update = mem_update
-        self.ego_downsample = ego_downsample
+        # self.ego_downsample = ego_downsample
         self.device = device
         self.device_mem = device  # cpu
         # self.device_mem = torch.device('cuda')  # cpu
@@ -45,10 +47,10 @@ class Trans4map_deformable_detr(nn.Module):
         ################################################################################################################
         #### 新增 encoding 初始化！
 
-        self.bev_h = 250
-        self.bev_w = 250
-        self.embed_dims = 256
-        self.bs = 1
+        self.bev_h = cfg['bev_h']
+        self.bev_w = cfg['bev_w']
+        self.embed_dims = cfg['mem_feature_dim']
+        self.bs = cfg['batch_size_every_processer']
 
         bev_bev_embedding = nn.Embedding(self.bev_h * self.bev_w, self.embed_dims)
         dtype = torch.float32
@@ -72,7 +74,7 @@ class Trans4map_deformable_detr(nn.Module):
                                'num_points_in_pillar': 4,
                                'return_intermediate': False,
                                'transformerlayers': {'type': 'BEVFormerLayer',
-                                                     'attn_cfgs': [{'type': 'SpatialCrossAttention', 'pc_range': [-51.2, -51.2, -5.0, 51.2, 51.2, 3.0],
+                                                     'attn_cfgs': [{'type': 'SpatialCrossAttention', 'pc_range': [-5, -5, -2, 5, 5, 1],
                                                                     'deformable_attention': {'type': 'MSDeformableAttention3D', 'embed_dims': 256, 'num_points': 8, 'num_levels': 4}, 'embed_dims': 256}],
                                                      'feedforward_channels': 512,
                                                      'ffn_dropout': 0.1,
@@ -80,8 +82,8 @@ class Trans4map_deformable_detr(nn.Module):
         self.encoder = build_transformer_layer_sequence(self.encoder_cfg )
 
 
-        if mem_update == 'replace':
-            self.linlayer = nn.Linear(ego_feat_dim, mem_feat_dim)
+        # if mem_update == 'replace':
+        #     self.linlayer = nn.Linear(ego_feat_dim, mem_feat_dim)
 
         ########################################### segformer and decoder ##############################################
         # self.encoder = Segformer()
@@ -100,7 +102,7 @@ class Trans4map_deformable_detr(nn.Module):
 
         # self.fuse = nn.Conv2d(mem_feat_dim*2, mem_feat_dim, 1, 1, 0)
 
-        self.decoder = Decoder(mem_feat_dim, n_obj_classes)
+        self.decoder = Decoder(self.embed_dims, n_obj_classes)
 
     def weights_init(self, m):
         classname = m.__class__.__name__
@@ -115,20 +117,9 @@ class Trans4map_deformable_detr(nn.Module):
     def mask_update(self,  # features,
                     proj_indices, masks_inliers, rgb_features):
 
-        # features = features.float() # torch.Size([1, 1, 64, 256, 512])
 
-        # N, T, C, H, W = features.shape
-        # # T = 1, N = 1
-        bs = 1
-
-
-        # if self.mem_update == 'replace':
-        #
-        #     state = torch.zeros((N * map_width * map_width, self.mem_feat_dim), dtype=torch.float, device=self.device_mem)
-        #     state_rgb = torch.zeros((N * map_width * map_width, 3), dtype=torch.uint8, device=self.device_mem)
-        state_rgb = torch.zeros((bs * map_width * map_width, 3), dtype=torch.uint8, device=self.device_mem)
-
-        observed_masks = torch.zeros((bs, map_width, map_width), dtype=torch.bool, device=self.device)
+        state_rgb = torch.zeros((self.bs * map_width * map_width, 3), dtype=torch.uint8, device=self.device_mem)
+        observed_masks = torch.zeros((self.bs, map_width, map_width), dtype=torch.bool, device=self.device)
 
         ################################################################################################################
         # # print('feature:', features.size())
@@ -153,18 +144,6 @@ class Trans4map_deformable_detr(nn.Module):
 
 
         if m.any():
-            # feature = F.interpolate(feature, size=(1024, 2048), mode="bilinear", align_corners=True)
-            # if self.ego_downsample:
-            #     feature = feature[:, :, ::4, ::4]
-
-            # feature = feature.permute(0, 2, 3, 1)  # -- (N,H,W,512) # torch.Size([1, 480, 640, 64])
-
-            # feature = feature[mask_inliers, :]     # torch.Size([841877, 64])
-            # print('feature_segformer:', feature.size())
-
-            # tmp_memory = feature[proj_index[m], :] # torch.Size([112116, 64])
-            # print('tmp_memory:', tmp_memory.size())
-
 
             # # rgb_features = rgb_features.squeeze(0)
             # # print('size_of_rgb_features:', rgb_features.size())
@@ -174,19 +153,10 @@ class Trans4map_deformable_detr(nn.Module):
             rgb_memory = rgb_features[proj_index[m], :]
             # print('rgb_memory:', rgb_memory.size(), rgb_memory)
 
-
             # print('m_view:', m.shape)
             tmp_top_down_mask = m.view(-1)         # torch.Size([250000])
             # print('tmp_top_down_mask***:', torch.sum(tmp_top_down_mask!=0))
 
-            # if self.mem_update == 'replace':
-            #     tmp_memory = self.linlayer(tmp_memory)
-            #     # print("tmp_memory_size:", tmp_memory.size())
-            #
-            #     state[tmp_top_down_mask, :] = tmp_memory.to(self.device_mem)  ### torch.size([250000, 256])
-            #
-            #     ### state_rgb[tmp_top_down_mask, :] = (rgb_memory * 255).to(self.device_mem)
-            #     state_rgb[tmp_top_down_mask, :] = rgb_memory.to(self.device_mem)
             state_rgb[tmp_top_down_mask, :] = rgb_memory.to(self.device_mem)
 
             ############################ rgb projection to show #############################
@@ -194,24 +164,16 @@ class Trans4map_deformable_detr(nn.Module):
             # print('state_rgb:', state_rgb.size(), rgb_write.size())
 
             rgb_write = rgb_write.cpu().numpy().astype(np.uint8)
-                #
+
                 # plt.imshow(rgb_write)
                 # plt.title('Topdown semantic map prediction')
                 # plt.axis('off')
                 # plt.show()
 
-            # else:
-            #     raise NotImplementedError
-
             ############################################################################################################
-            observed_masks += m.reshape(bs, map_width, map_width)   # torch.Size([1, 500, 500])
+            observed_masks += m.reshape(self.bs, map_width, map_width)   # torch.Size([1, 500, 500])
             # print('observed_masks:', torch.sum(observed_masks==0), observed_masks.size())
 
-            # del tmp_memory
-        # del feature
-
-        # if self.mem_update == 'replace':
-        #     memory = state
 
         # memory = memory.view(N, map_width, map_width, self.mem_feat_dim) # torch.Size([1, 250, 250, 256])
 
@@ -226,7 +188,6 @@ class Trans4map_deformable_detr(nn.Module):
         return observed_masks, rgb_write
 
 
-    # def forward(self, features, proj_indices, masks_inliers):
     def forward(self, rgb, proj_indices, masks_inliers, rgb_no_norm):
         # print('rgb_rgb:', rgb.size())
 
@@ -249,8 +210,9 @@ class Trans4map_deformable_detr(nn.Module):
         bev_queries, feat_flatten, bev_h, bev_w, bev_pos, spatial_shapes, level_start_index = get_bev_features(
             feat_fpn, self.bev_queries, self.bev_h, self.bev_w, self.bev_pos)
         prev_bev = None
-        # shift = torch.tensor([[-0.0001,  0.0416]], device='cuda:0')
         shift = None
+        # shift = torch.tensor([[-0.0001,  0.0416]], device='cuda:0')
+
         kwargs = {'img_metas': [{
             'img_shape': [(1024, 2048, 3)],
         }]}
@@ -280,9 +242,9 @@ class Trans4map_deformable_detr(nn.Module):
 
         # print('bev_embed:', bev_embed.size())
         ###改变位置
-        bs = 1
+        # bs = 1
         bev_embed = bev_embed.permute(0, 2, 1)
-        bev_embed = bev_embed.view(bs, 256, self.bev_h, self.bev_w)
+        bev_embed = bev_embed.view(self.bs, 256, self.bev_h, self.bev_w)
 
         ##### 特征尺寸无法这么搞！！！
         bev_embed = F.interpolate(bev_embed, size=(500, 500), mode="bilinear", align_corners=True)

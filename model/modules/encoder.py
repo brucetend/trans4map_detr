@@ -8,9 +8,9 @@
 #from projects.mmdet3d_plugin.models.utils.bricks import run_time
 #from projects.mmdet3d_plugin.models.utils.visual import save_tensor
 from model.modules.point_sampling_panorama import point_sampling_pano
-
-import matplotlib.pyplot as plt
 from .custom_base_transformer_layer import MyCustomBaseTransformerLayer
+
+# import matplotlib.pyplot as plt
 import copy
 import warnings
 from mmcv.cnn.bricks.registry import (ATTENTION,
@@ -395,7 +395,7 @@ class BEVFormerLayer(MyCustomBaseTransformerLayer):
                 key=None,
                 value=None,
                 bev_pos=None,
-                query_pos=None,
+                # query_pos=None,
                 key_pos=None,
                 attn_masks=None,
                 query_key_padding_mask=None,
@@ -448,6 +448,7 @@ class BEVFormerLayer(MyCustomBaseTransformerLayer):
         norm_index = 0
         attn_index = 0
         ffn_index = 0
+
         # print('bev_pos_in_BEVFormerLayer:', bev_pos.size())
 
         identity = query
@@ -498,13 +499,15 @@ class BEVFormerLayer(MyCustomBaseTransformerLayer):
             # spaital cross attention
             elif layer == 'cross_attn':
                 # print("cross_attn_index:", self.attentions[attn_index])
+                # print('query_pos:', bev_pos.size())
 
                 query = self.attentions[attn_index](
                     query,
                     key,
                     value,
                     identity if self.pre_norm else None,
-                    query_pos=query_pos,
+                    # query_pos=query_pos,
+                    query_pos=bev_pos,
                     # key_pos=key_pos,
                     reference_points=ref_3d,
                     reference_points_cam=reference_points_cam,

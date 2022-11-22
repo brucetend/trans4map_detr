@@ -7,6 +7,10 @@ model:
     mem_feature_dim: 256
     mem_update: replace
     ego_downsample: False
+    bev_h: 250
+    bev_w: 250
+    batch_size_every_processer: 1
+
 data:
     train_split: train
     val_split: val

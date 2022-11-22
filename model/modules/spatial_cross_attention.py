@@ -218,11 +218,13 @@ class SpatialCrossAttention(BaseModule):
         count = bev_mask.sum(-1) > 0
 
         ### [1, 40000]
-        ## count = count.permute(1, 2, 0).sum(-1)
+        count = count[..., None]
+        count = count.permute(0, 1, 2).sum(-1)
         # print('count:', count.size(), count)
 
         ### 无论多小，最小值都是1
         count = torch.clamp(count, min=1.0)
+        # print('count2:', count.size(), count[..., None].size(), slots.size())
         ### [1, 40000, 1]
 
         slots = slots / count[..., None]
@@ -382,6 +384,7 @@ class MSDeformableAttention3D(BaseModule):
         if identity is None:
             identity = query
         if query_pos is not None:
+            # print('query_pos:', query_pos.size())
             query = query + query_pos
 
         if not self.batch_first:
