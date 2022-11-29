@@ -13,7 +13,8 @@ from mmcv.cnn.bricks.transformer import build_transformer_layer_sequence
 from mmdet.models.necks import FPN
 from mmcv.cnn.bricks.transformer import build_positional_encoding
 from model.modules.point_sampling_panorama import get_bev_features
-
+from mmcv.cnn.bricks import transformer
+# print("**:", transformer.__file__)
 
 
 
@@ -35,7 +36,7 @@ class Trans4map_deformable_detr(nn.Module):
         mem_update = cfg['mem_update']
         # ego_downsample = cfg['ego_downsample']
 
-        print('cfg__:', cfg)
+        # print('cfg__:', cfg)
 
         # self.mem_feat_dim = mem_feat_dim
         self.mem_update = mem_update
@@ -67,9 +68,10 @@ class Trans4map_deformable_detr(nn.Module):
         ################################################################################################################
 
         self.encoder_backbone = ResNet(depth = 101)
+        self.encoder_backbone.init_weights()
 
         self.encoder_cfg = {'type': 'BEVFormerEncoder',
-                               'num_layers': 2,
+                               'num_layers': 3,
                                'pc_range': [-5, -5, -2, 5, 5, 1], # pc_range: pointcloud_range_XYZ
                                'num_points_in_pillar': 4,
                                'return_intermediate': False,
@@ -81,6 +83,20 @@ class Trans4map_deformable_detr(nn.Module):
                                                      'operation_order': ('cross_attn', 'norm', 'ffn', 'norm')}}
         self.encoder = build_transformer_layer_sequence(self.encoder_cfg )
 
+
+        self.decoder_cfg = {'type': 'DeformableDetrTransformerDecoder',
+                   'num_layers': 2, 'return_intermediate': True,
+                   'transformerlayers': {'type': 'DetrTransformerDecoderLayer',
+                                         'attn_cfgs': [{'type': 'MultiheadAttention', 'embed_dims': 256, 'num_heads': 8, 'dropout': 0.1},
+                                                       {'type': 'MultiScaleDeformableAttention', 'embed_dims': 256, 'num_levels': 1}],
+                                         'feedforward_channels': 512,
+                                         'ffn_dropout': 0.1,
+                                         'operation_order': ('self_attn', 'norm', 'cross_attn', 'norm', 'ffn', 'norm')}}
+
+        self.semantic_decoder = build_transformer_layer_sequence(self.decoder_cfg)
+        print('semantic_decoder:', self.semantic_decoder)
+
+        self.reference_points = nn.Linear(self.embed_dims, 3)
 
         # if mem_update == 'replace':
         #     self.linlayer = nn.Linear(ego_feat_dim, mem_feat_dim)
@@ -102,6 +118,7 @@ class Trans4map_deformable_detr(nn.Module):
 
         # self.fuse = nn.Conv2d(mem_feat_dim*2, mem_feat_dim, 1, 1, 0)
 
+        # print('self.embed_dims:', self.embed_dims)
         self.decoder = Decoder(self.embed_dims, n_obj_classes)
 
     def weights_init(self, m):
@@ -184,6 +201,7 @@ class Trans4map_deformable_detr(nn.Module):
         # memory = memory.to(self.device)
 
         observed_masks = observed_masks.to(self.device)
+        # print('observed_masks, rgb_write:', observed_masks.size(), rgb_write.shape)
 
         return observed_masks, rgb_write
 
@@ -232,6 +250,9 @@ class Trans4map_deformable_detr(nn.Module):
                     **kwargs
                 )
 
+
+
+
         # features = features.unsqueeze(0)      # torch.Size([1, 1, 64, 128, 256])
         # predictions = F.interpolate(predictions, size=(480,640), mode="bilinear", align_corners=True)
 
@@ -241,16 +262,63 @@ class Trans4map_deformable_detr(nn.Module):
                                                     rgb_no_norm)
 
         # print('bev_embed:', bev_embed.size())
-        ###改变位置
-        # bs = 1
-        bev_embed = bev_embed.permute(0, 2, 1)
-        bev_embed = bev_embed.view(self.bs, 256, self.bev_h, self.bev_w)
+        # ###改变位置
+        # # bs = 1
+        # bev_embed = bev_embed.permute(0, 2, 1)
+        # bev_embed = bev_embed.view(self.bs, 256, self.bev_h, self.bev_w)
+        # ### (250, 250)
 
         ##### 特征尺寸无法这么搞！！！
-        bev_embed = F.interpolate(bev_embed, size=(500, 500), mode="bilinear", align_corners=True)
+        # bev_embed = F.interpolate(bev_embed, size=(500, 500), mode="bilinear", align_corners=True)
+
+
+        ################################################################################################################
+        ### 新query的构建！
+        num_query = 900 # 50*50, 32*32
+        dtype = torch.float
+        query_embedding = nn.Embedding(num_query, self.embed_dims * 2)
+        object_query_embeds = query_embedding.weight.to(dtype)
+
+        query_pos, query = torch.split(object_query_embeds, self.embed_dims, dim=1)
+
+        query_pos = query_pos.unsqueeze(0).expand(self.bs, -1, -1).to("cuda")
+        query = query.unsqueeze(0).expand(self.bs, -1, -1).to('cuda')
+
+
+        reference_points = self.reference_points(query_pos)
+        reference_points = reference_points.sigmoid()
+
+        # print('reference_points_in_decoder:', reference_points.size()) ### torch.Size([1, 900, 3])
+        # print('query_size_in_decoder:', query.size(), query_pos.size(), bev_embed.size()) ### torch.Size([1, 900, 256])
+        # print('referene_points:', reference_points.size())
+
+        query = query.permute(1, 0, 2)
+        query_pos = query_pos.permute(1, 0, 2)
+        bev_embed = bev_embed.permute(1, 0, 2)
+
+
+        semmap_feat, inter_references = self.semantic_decoder(query=query,
+                                            key=None,
+                                            value=bev_embed,
+                                            query_pos=query_pos,
+                                            reference_points=reference_points,
+                                            reg_branches=None,
+                                            cls_branches=None,
+                                            spatial_shapes=torch.tensor([[bev_h, bev_w]], device=query.device),
+                                            level_start_index=torch.tensor([0], device=query.device),
+                                            **kwargs)
+        ################################################################################################################
+
+        semmap_feat_inter = semmap_feat.squeeze(2)
+        semmap_feat_inter = semmap_feat_inter.reshape(1, self.embed_dims, 30, -1)
+        # print('semmap_feat:', semmap_feat_inter.size())   ### torch.Size([1, 1024, 1, 256])
+
 
         # semmap = self.decoder(memory)
-        semmap = self.decoder(bev_embed)
+        semmap_feat_inter = F.interpolate(semmap_feat_inter, size=(500, 500), mode="bilinear", align_corners=True)
+
+        semmap = self.decoder(semmap_feat_inter)
+
 
 
         # return semmap, observed_masks, rgb_write

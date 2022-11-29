@@ -282,6 +282,7 @@ class BEVFormerEncoder(TransformerLayerSequence):
 
         # reference_points_cam, bev_mask = self.point_sampling(ref_3d, self.pc_range, kwargs['img_metas'])
         reference_points_cam, bev_mask = point_sampling_pano(ref_3d, self.pc_range, kwargs['img_metas'])
+        # print('reference_points_cam:', reference_points_cam.size(), bev_mask.size())
         #### 用reference point算出了reference_points_cam, bev_mask，结合pc_range, XYZ方向上的范围
         ### torch.Size([1, 40000, 4, 2]) torch.Size([1, 40000, 4])
         ################################################################################################################

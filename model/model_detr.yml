@@ -7,8 +7,8 @@ model:
     mem_feature_dim: 256
     mem_update: replace
     ego_downsample: False
-    bev_h: 250
-    bev_w: 250
+    bev_h: 200
+    bev_w: 200
     batch_size_every_processer: 1
 
 data:

@@ -135,7 +135,7 @@ class SpatialCrossAttention(BaseModule):
 
         if query_pos is not None:
             query = query + query_pos
-        # print('query_pos11:', query_pos)   ### 测试中也为None,是因为temporal_self_attention加过了
+            # print('query_pos11:', query_pos)   ### 测试中也为None,是因为temporal_self_attention加过了
 
 
         bs, num_query, _ = query.size()
@@ -384,7 +384,7 @@ class MSDeformableAttention3D(BaseModule):
         if identity is None:
             identity = query
         if query_pos is not None:
-            # print('query_pos:', query_pos.size())
+            # print('query_pos:', query_pos.size()) ### not here
             query = query + query_pos
 
         if not self.batch_first:

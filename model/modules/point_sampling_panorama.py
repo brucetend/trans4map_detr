@@ -8,7 +8,7 @@ from torch.nn.init import normal_
 
 
 
-def get_cam_reference_coordinate(reference_points):
+def get_cam_reference_coordinate(reference_points, height, width):
 
     # ref_3d_ = reference_points.cpu()
     ref_3d_ = reference_points
@@ -37,7 +37,9 @@ def get_cam_reference_coordinate(reference_points):
     Theta = Theta.cpu()
     Phi = Phi.cpu()
 
-    h, w = 512, 1024
+    # h, w = 512, 1024
+    h,w = height, width
+
     height_num = h* Theta / np.pi - 1/2
     height_num = height_num.ceil()
     width_num = (Phi/np.pi + 1 -1/w) * w/2
@@ -104,8 +106,10 @@ def point_sampling_pano(reference_points, pc_range,  img_metas):
         reference_points = reference_points.view(D, B, num_query, 4).unsqueeze(-1)
         # print('reference_points_1:', reference_points.size())  ## torch.Size([4, 1, 40000, 4, 1])
 
+    img_height = img_metas[0]['img_shape'][0][0]
+    img_width = img_metas[0]['img_shape'][0][1]
 
-    reference_points_cam = get_cam_reference_coordinate(reference_points)
+    reference_points_cam = get_cam_reference_coordinate(reference_points, img_height, img_width)
     #### torch.Size([4, 1, 40000, 4])
     ### torch.Size([4, 1, 40000, 2])
 
@@ -127,8 +131,8 @@ def point_sampling_pano(reference_points, pc_range,  img_metas):
     #     reference_points_cam[..., 2:3], torch.ones_like(reference_points_cam[..., 2:3]) * eps)
     ### torch.Size([4, 1, 1, 40000, 2])
 
-    reference_points_cam[..., 0] /= img_metas[0]['img_shape'][0][0]  #512
-    reference_points_cam[..., 1] /= img_metas[0]['img_shape'][0][1]  #1024
+    reference_points_cam[..., 0] /= img_metas[0]['img_shape'][0][0]  #1024
+    reference_points_cam[..., 1] /= img_metas[0]['img_shape'][0][1]  #2048
 
     bev_mask = (  (reference_points_cam[..., 1:2] > 0.0)
                 & (reference_points_cam[..., 1:2] < 1.0)
@@ -237,8 +241,5 @@ def get_bev_features(
 
     feat_flatten = feat_flatten.permute(0, 2, 1, 3)  # (num_cam, H*W, bs, embed_dims) (6, 30825, 1, 256)
 
-    # kwargs = {'img_metas': [{
-    #                          'img_shape': [(928, 1600, 3), (928, 1600, 3), (928, 1600, 3), (928, 1600, 3), (928, 1600, 3), (928, 1600, 3)],
-    #                         }]}
 
     return bev_queries, feat_flatten, bev_h, bev_w, bev_pos, spatial_shapes, level_start_index
