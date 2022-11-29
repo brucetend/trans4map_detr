@@ -10,6 +10,7 @@ import mmcv
 from mmcv.runner.checkpoint import load_checkpoint
 import torch
 from mmdet.models.necks import FPN
+import torchvision
 
 
 
@@ -298,16 +299,31 @@ class ResNet(nn.Module):
             len(stage_blocks) - 1)
 
     def init_weights(self, pretrained: Optional[str] = None) -> None:
+        print('pretrained:', pretrained)
+
         if isinstance(pretrained, str):
             logger = logging.getLogger()
             # from ..runner import load_checkpoint
             load_checkpoint(self, pretrained, strict=False, logger=logger)
+
         elif pretrained is None:
             for m in self.modules():
                 if isinstance(m, nn.Conv2d):
                     kaiming_init(m)
                 elif isinstance(m, nn.BatchNorm2d):
                     constant_init(m, 1)
+
+            ############################################################################################################
+            model_dict = self.state_dict()
+            resnet_101 = torchvision.models.resnet101(weights=torchvision.models.ResNet101_Weights.DEFAULT)
+            pretrained_dict = resnet_101.state_dict()
+
+            pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
+
+            model_dict.update(pretrained_dict)
+            self.load_state_dict(model_dict)
+
+
         else:
             raise TypeError('pretrained must be a str or None')
 
@@ -354,7 +370,9 @@ if __name__ == '__main__':
     device = "cuda"
 
     Encoder_mmcv = ResNet(depth=101).to(device)
-    print('encoder_mmcv:', Encoder_mmcv)
+    Encoder_mmcv.init_weights()
+
+
 
     img = torch.randn([1,3,512,1024]).to(device)
     ml_feat = Encoder_mmcv(img)
