@@ -85,7 +85,8 @@ class Trans4map_deformable_detr(nn.Module):
 
 
         self.decoder_cfg = {'type': 'DeformableDetrTransformerDecoder',
-                   'num_layers': 2, 'return_intermediate': True,
+                   'num_layers': 2, # 'return_intermediate': True,
+                   'return_intermediate': False,
                    'transformerlayers': {'type': 'DetrTransformerDecoderLayer',
                                          'attn_cfgs': [{'type': 'MultiheadAttention', 'embed_dims': 256, 'num_heads': 8, 'dropout': 0.1},
                                                        {'type': 'MultiScaleDeformableAttention', 'embed_dims': 256, 'num_levels': 1}],
@@ -310,8 +311,8 @@ class Trans4map_deformable_detr(nn.Module):
         ################################################################################################################
 
         semmap_feat_inter = semmap_feat.squeeze(2)
+        # print('semmap_feat:', semmap_feat_inter.size())   ### torch.Size([2， 900, 256])
         semmap_feat_inter = semmap_feat_inter.reshape(1, self.embed_dims, 30, -1)
-        # print('semmap_feat:', semmap_feat_inter.size())   ### torch.Size([1, 1024, 1, 256])
 
 
         # semmap = self.decoder(memory)
